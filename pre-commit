@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# Author: Nicolai Krohg
+# Date: 2025-04-10
+# Location: Oslo, Norway
+# Contact: nicolai.krohg@gmail.com
+#
+# Purpose: Goes through EF Core migrations and looks for cases of using the database name in front of the 
+# schema name in SQL queries
+# Use: Configure the variable fileFolder with the path to the folder where migrations are located. Configure
+# the schemaNames array with the different possible schema names. This could be easily found by running the 
+# SQL query: `select name from sys.schemas order by name;` in SSMS
+
+fileFolder="src/backend/Krut.Model/Migrations"
+schemaNames=("aktør" "db_accessadmin" "db_backupoperator" "db_datareader" "db_datawriter" "db_ddladmin" "db_denydatareader" "db_denydatawriter" "db_owner" "db_securityadmin" "dbo" "felles" "guest" "INFORMATION_SCHEMA" "ksu" "sys")
+
+# Check that configurations are correct
+if [[ ! -d "$fileFolder" ]]; then
+    echo "The folder path $fileFolder, configured in the pre-commit git hook does not seem to point to a valid folder, please check that the variable 'fileFolder' points to the directory containing your migrations."
+    echo "Current path: $(pwd)"
+    exit 1
+fi
+
+# First we get the files we are going to commit through the git command. We filter out only .cs-files, but not 
+# .Designer.cs-files, and then finally we create a filtered list of the changed files that are in the migrations
+# directory
+echo "Finding possible migrations"
+changedFiles=$(git diff --name-only --cached --diff-filter=ACM | grep -E '.*\.cs' | grep -v -E '.*\.Designer\.cs')
+changedFilesArray=($changedFiles)
+filteredFiles=()
+for file in "${changedFilesArray[@]}"; do
+    if [[ "$file" == ${fileFolder}* ]]; then
+        filteredFiles+=("$file")
+    fi
+done
+
+if [[ ${#filteredFiles[@]} -eq 0 ]]; then
+    echo "No migrations found, thus no possible migration errors either"
+    exit 0
+fi
+
+# We then go through these files one at the time. We search down each line of the file and look for the keywords
+# `migrationBuilder.Sql(@"`. From that point we extract all lines until but not including when we reach a line
+# containing the keyword `");`.
+#
+# In the extracted lines, we then look for the regex pattern `'(\[?[A-Za-z0-9_]+\]?)[.](\[?[A-Za-z0-9_]+\]?)[.](\[?[A-Za-z0-9_]+\]?)'. We print all the lines where the pattern matches as well as the filename.
+#
+# After having gone through alle the lines in all the files, if no matches were found: we don't do anything.
+# If there were any matches, we alert the user if they want to continue anyway (y/n)? with default n, so if they
+# just hit enter, then the script should exit with an error code so that the git hook stops the remaining
+# executions and stops the code from being commited.
+
+
+hasFoundMatch=0
+
+startPattern="migrationBuilder\\\\.Sql\\\\(@\""
+endPattern="\"\\\\);"
+schemaPattern=$(IFS='|'; echo "${schemaNames[*]}")
+schemaPattern="(${schemaPattern})"
+searchPattern="\\\\[?[A-ZÆØÅa-zæøå0-9_]+\\\\]?\\\\.\\\\[?${schemaPattern}\\\\]?\\\\.\\\\[?[A-ZÆØÅa-zæøå0-9_]+\\\\]?"
+#echo $searchPattern
+    
+echo "Reviewing migrations for SQL database name errors"
+for file in "${filteredFiles[@]}"; do
+
+    # Searches a file for raw SQL queries in migrations that contain the database-name.
+
+    filePath="$file"
+    fileName="${filePath##.*/}"
+
+    awk -v start="$startPattern" -v end="$endPattern" -v search="$searchPattern" -v fname="$fileName" '
+        BEGIN { inSection = 0; searchMatch = 0 }
+        {
+            if ($0 ~ start) {
+                inSection = 1
+                next
+            }
+            if ($0 ~ end && inSection) {
+                inSection = 0
+                next
+            }
+            if (inSection && $0 ~ search) {
+                print fname ": " NR "> "
+                print $0
+                searchMatch = 1
+            }
+        }
+        END {
+            exit searchMatch
+        }
+    ' "$filePath"
+
+    # Capture search result
+    if [[ $? -eq 1 ]]; then
+        hasFoundMatch=1
+    fi
+done
+
+if [[ $hasFoundMatch -eq 1 ]]; then
+    echo -e "\nWe found a possible case of use of the database name in an SQL query (see above). It is not recommended to specify the database name in migrations since this often changes between dev, test and prod environments." 
+    read -p "Abort commit (yes/no)?: " answer </dev/tty
+
+    if [[ "$answer" =~ n ]]; then
+        exit 0
+    fi
+
+    exit 1
+fi
+
+echo "No match found"
+exit 0

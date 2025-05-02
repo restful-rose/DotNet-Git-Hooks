@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# -----------------------------------------------------
+# Regex pattern for Conventional Commits format: type(scope): short description
+conventional_commit_regex='^(build|chore|ci|doc|feat|fix|bugfix|perf|refactor|sec|style|test|security)(\([^\)]+\))?: .{1,200}$'
+Merge branch 'main' into
+merge_regex='^Merge branch.*into.*'
+
+# Read the commit message from the argument passed to the hook
+commit_message=$(cat "$1")
+
+# Check if the commit message matches the Conventional Commits pattern
+if ! [[ "$commit_message" =~ $conventional_commit_regex || "$commit_message" =~ $merge_regex ]]; then
+    echo "Error: Commit message does not follow the Conventional Commits format."
+    echo ""
+    echo "$commit_message"
+    echo ""
+    echo "Expected format: type(scope): short description"
+    echo "Examples: "
+    echo "    'feat(login): add login button'"
+    echo "    'fix(auth): resolve authentication issue'"
+    echo "    'doc(readme): update installation instructions'"
+    exit 1  # Exit with a failure status
+fi
+
+# -----------------------------------------------------
+echo "dotnet build"
+
+dotnet clean -v q; dotnet build -v q -warnAsMessage:"NU1900,CS8604"
+rc=$?
+
+if [[ $rc != 0 ]]; then
+    echo -e "build failed"
+    exit $rc
+fi
+
+# -----------------------------------------------------
+echo "dotnet test"
+
+dotnet test --no-build --filter UnitTests -v q
+rc=$?
+
+if [[ $rc != 0 ]]; then
+    echo -e "tests failed"
+    exit $rc
+fi
+
+exit 0  # Exit successfully if the commit message is valid
+
+# -----------------------------------------------------
+# Launcher script for the powershell script
+#
+#echo
+#exec powershell.exe -ExecutionPolicy RemoteSigned -File '.\commit-msg.ps1'
+#exit

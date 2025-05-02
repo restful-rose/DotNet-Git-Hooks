@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+
+# Get list of staged C# files
+staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.cs$')
+
+# Exit early if no C# files were changed
+if [ -z "$staged_files" ]; then
+    exit 0
+fi
+
+echo "Running CSharpier on staged C# files..."
+
+# Run CSharpier on staged C# files..."
+for file in $staged_files; do
+    dotnet csharpier --loglevel Warning "$file"
+    echo "$file"
+    git add "$file" # Re-stage formatted files
+done
+
+echo "CSharpier formatting complete."
+
+exit 0
