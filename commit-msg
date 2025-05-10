@@ -3,7 +3,7 @@
 # -----------------------------------------------------
 # Regex pattern for Conventional Commits format: type(scope): short description
 conventional_commit_regex='^(build|chore|ci|doc|feat|fix|bugfix|perf|refactor|sec|style|test|security)(\([^\)]+\))?: .{1,200}$'
-Merge branch 'main' into
+#Merge branch 'main' into
 merge_regex='^Merge branch.*into.*'
 
 # Read the commit message from the argument passed to the hook
